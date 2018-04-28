@@ -28,14 +28,14 @@ Please cite and refer to:
 
 ![Multiple Granularity Network](/architecture.png)
 
-* `mgn/mgn.py`: re-production of Multiple Granularity Network.
+* [mgn/mgn.py](/mgn/mgn.py): re-production of Multiple Granularity Network.
 
-* `mgn/ide.py`: baseline ResNet-50 based model, which is a rewritten of [Person reID baseline pytorch](
+* [mgn/ide.py](/mgn/ide.py): baseline ResNet-50 based model, which is a rewritten from [Person reID baseline pytorch](
 https://github.com/layumi/Person_reID_baseline_pytorch).
 
-* `mgn/triplet.py`: triplet semi-hard sample mining loss.
+* [mgn/triplet.py](/mgn/triplet.py): triplet semi-hard sample mining loss.
 
-* `mgn/market1501.py`: Market-1501 dataset.
+* [mgn/market1501.py](/mgn/market1501.py): Market-1501 dataset.
 
 * `Market-1501-v15.09.15/`: Market-1501 dataset root directory.
 
