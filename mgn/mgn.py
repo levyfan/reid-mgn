@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function
 
+import argparse
 import copy
 import multiprocessing
 import os
@@ -20,8 +21,14 @@ from __init__ import cmc, mean_ap, DEVICE
 from market1501 import Market1501, RandomIdSampler
 from triplet import TripletSemihardLoss
 
-root = os.path.dirname(os.path.realpath(__file__)) + '/../Market-1501-v15.09.15'
-num_workers = multiprocessing.cpu_count() / 2
+parser = argparse.ArgumentParser(description='Multiple Granularity Network')
+parser.add_argument('--model', choices=['mgn', 'p1_single', 'p2_single', 'p3_single'], default='mgn')
+parser.add_argument('--root', default=os.path.dirname(os.path.realpath(__file__)) + '/../Market-1501-v15.09.15')
+parser.add_argument('--workers', default=multiprocessing.cpu_count() / 2, type=int)
+args = parser.parse_args()
+print('')
+print(args)
+print('')
 
 
 class MGN(nn.Module):
@@ -140,60 +147,70 @@ class MGN(nn.Module):
     def forward(self, x):
         """
         :param x: input image tensor of (N, C, H, W)
-        :return: (prediction,
-                  L_triplet^G,
-                  L_triplet^P2,
-                  L_triplet^P3,
-                  L_softmax^G,
-                  L_softmax^P2,
-                  L_softmax^P3,
-                  L_softmax0^P2,
-                  L_softmax1^P2,
-                  L_softmax0^P3,
-                  L_softmax1^P3,
-                  L_softmax2^P3)
+        :return: (prediction, triplet_losses, softmax_losses)
         """
         x = self.backbone(x)
 
-        p1 = self.p1(x)
-        p2 = self.p2(x)
-        p3 = self.p3(x)
+        predict = []
+        triplet_losses = []
+        softmax_losses = []
 
-        zg_p1 = self.maxpool_zg_p1(p1)  # z_g^G
-        zg_p2 = self.maxpool_zg_p2(p2)  # z_g^P2
-        zg_p3 = self.maxpool_zg_p3(p3)  # z_g^P3
+        if args.model in {'mgn', 'p1_single'}:
+            p1 = self.p1(x)
 
-        zp2 = self.maxpool_zp2(p2)
-        z0_p2 = zp2[:, :, 0:1, :]  # z_p0^P2
-        z1_p2 = zp2[:, :, 1:2, :]  # z_p1^P2
+            zg_p1 = self.maxpool_zg_p1(p1)  # z_g^G
+            fg_p1 = self.reduction_0(zg_p1).squeeze(dim=3).squeeze(dim=2)  # f_g^G, L_triplet^G
+            l_p1 = self.fc_id_2048_0(zg_p1.squeeze(dim=3).squeeze(dim=2))  # L_softmax^G
 
-        zp3 = self.maxpool_zp3(p3)
-        z0_p3 = zp3[:, :, 0:1, :]  # z_p0^P3
-        z1_p3 = zp3[:, :, 1:2, :]  # z_p1^P3
-        z2_p3 = zp3[:, :, 2:3, :]  # z_p2^P3
+            predict.append(fg_p1)
+            triplet_losses.append(fg_p1)
+            softmax_losses.append(l_p1)
 
-        fg_p1 = self.reduction_0(zg_p1).squeeze(dim=3).squeeze(dim=2)  # f_g^G, L_triplet^G
-        fg_p2 = self.reduction_1(zg_p2).squeeze(dim=3).squeeze(dim=2)  # f_g^P2, L_triplet^P2
-        fg_p3 = self.reduction_2(zg_p3).squeeze(dim=3).squeeze(dim=2)  # f_g^P3, L_triplet^P3
-        f0_p2 = self.reduction_3(z0_p2).squeeze(dim=3).squeeze(dim=2)  # f_p0^P2
-        f1_p2 = self.reduction_4(z1_p2).squeeze(dim=3).squeeze(dim=2)  # f_p1^P2
-        f0_p3 = self.reduction_5(z0_p3).squeeze(dim=3).squeeze(dim=2)  # f_p0^P3
-        f1_p3 = self.reduction_6(z1_p3).squeeze(dim=3).squeeze(dim=2)  # f_p1^P3
-        f2_p3 = self.reduction_7(z2_p3).squeeze(dim=3).squeeze(dim=2)  # f_p2^P3
+        if args.model in {'mgn', 'p2_single'}:
+            p2 = self.p2(x)
 
-        l_p1 = self.fc_id_2048_0(zg_p1.squeeze(dim=3).squeeze(dim=2))  # L_softmax^G
-        l_p2 = self.fc_id_2048_1(zg_p2.squeeze(dim=3).squeeze(dim=2))  # L_softmax^P2
-        l_p3 = self.fc_id_2048_2(zg_p3.squeeze(dim=3).squeeze(dim=2))  # L_softmax^P3
-        l0_p2 = self.fc_id_256_1_0(f0_p2)  # L_softmax0^P2
-        l1_p2 = self.fc_id_256_1_1(f1_p2)  # L_softmax1^P2
-        l0_p3 = self.fc_id_256_2_0(f0_p3)  # L_softmax0^P3
-        l1_p3 = self.fc_id_256_2_1(f1_p3)  # L_softmax1^P3
-        l2_p3 = self.fc_id_256_2_2(f2_p3)  # L_softmax2^P3
+            zg_p2 = self.maxpool_zg_p2(p2)  # z_g^P2
+            fg_p2 = self.reduction_1(zg_p2).squeeze(dim=3).squeeze(dim=2)  # f_g^P2, L_triplet^P2
+            l_p2 = self.fc_id_2048_1(zg_p2.squeeze(dim=3).squeeze(dim=2))  # L_softmax^P2
+
+            zp2 = self.maxpool_zp2(p2)
+            z0_p2 = zp2[:, :, 0:1, :]  # z_p0^P2
+            z1_p2 = zp2[:, :, 1:2, :]  # z_p1^P2
+            f0_p2 = self.reduction_3(z0_p2).squeeze(dim=3).squeeze(dim=2)  # f_p0^P2
+            f1_p2 = self.reduction_4(z1_p2).squeeze(dim=3).squeeze(dim=2)  # f_p1^P2
+            l0_p2 = self.fc_id_256_1_0(f0_p2)  # L_softmax0^P2
+            l1_p2 = self.fc_id_256_1_1(f1_p2)  # L_softmax1^P2
+
+            predict.extend([fg_p2, f0_p2, f1_p2])
+            triplet_losses.append(fg_p2)
+            softmax_losses.extend([l_p2, l0_p2, l1_p2])
+
+        if args.model in {'mgn', 'p3_single'}:
+            p3 = self.p3(x)
+
+            zg_p3 = self.maxpool_zg_p3(p3)  # z_g^P3
+            fg_p3 = self.reduction_2(zg_p3).squeeze(dim=3).squeeze(dim=2)  # f_g^P3, L_triplet^P3
+            l_p3 = self.fc_id_2048_2(zg_p3.squeeze(dim=3).squeeze(dim=2))  # L_softmax^P3
+
+            zp3 = self.maxpool_zp3(p3)
+            z0_p3 = zp3[:, :, 0:1, :]  # z_p0^P3
+            z1_p3 = zp3[:, :, 1:2, :]  # z_p1^P3
+            z2_p3 = zp3[:, :, 2:3, :]  # z_p2^P3
+            f0_p3 = self.reduction_5(z0_p3).squeeze(dim=3).squeeze(dim=2)  # f_p0^P3
+            f1_p3 = self.reduction_6(z1_p3).squeeze(dim=3).squeeze(dim=2)  # f_p1^P3
+            f2_p3 = self.reduction_7(z2_p3).squeeze(dim=3).squeeze(dim=2)  # f_p2^P3
+            l0_p3 = self.fc_id_256_2_0(f0_p3)  # L_softmax0^P3
+            l1_p3 = self.fc_id_256_2_1(f1_p3)  # L_softmax1^P3
+            l2_p3 = self.fc_id_256_2_2(f2_p3)  # L_softmax2^P3
+
+            predict.extend([fg_p3, f0_p3, f1_p3, f2_p3])
+            triplet_losses.append(fg_p3)
+            softmax_losses.extend([l_p3, l0_p3, l1_p3, l2_p3])
 
         # 3. Multiple Granularity Network 3.1. Network Architecture: During testing phases, to obtain the most powerful
         # discrimination, all the features reduced to 256-dim are concatenated as the final feature.
-        predict = torch.cat([fg_p1, fg_p2, fg_p3, f0_p2, f1_p2, f0_p3, f1_p3, f2_p3], dim=1)
-        return predict, fg_p1, fg_p2, fg_p3, l_p1, l_p2, l_p3, l0_p2, l1_p2, l0_p3, l1_p3, l2_p3
+        predict = torch.cat(predict, dim=1)
+        return predict, triplet_losses, softmax_losses
 
 
 def run():
@@ -208,11 +225,11 @@ def run():
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
-    train_dataset = Market1501(root + '/bounding_box_train', transform=train_transform)
+    train_dataset = Market1501(args.root + '/bounding_box_train', transform=train_transform)
     train_loader = dataloader.DataLoader(train_dataset,
                                          sampler=RandomIdSampler(train_dataset, batch_image=batch_image),
                                          batch_size=batch_id * batch_image,
-                                         num_workers=num_workers)
+                                         num_workers=args.workers)
 
     test_transform = transforms.Compose([
         transforms.Resize((384, 128)),
@@ -226,15 +243,15 @@ def run():
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ])
 
-    query_dataset = Market1501(root + '/query', transform=test_transform)
-    query_flip_dataset = Market1501(root + '/query', transform=test_flip_transform)
-    query_loader = dataloader.DataLoader(query_dataset, batch_size=batch_test, num_workers=num_workers)
-    query_flip_loader = dataloader.DataLoader(query_flip_dataset, batch_size=batch_test, num_workers=num_workers)
+    query_dataset = Market1501(args.root + '/query', transform=test_transform)
+    query_flip_dataset = Market1501(args.root + '/query', transform=test_flip_transform)
+    query_loader = dataloader.DataLoader(query_dataset, batch_size=batch_test, num_workers=args.workers)
+    query_flip_loader = dataloader.DataLoader(query_flip_dataset, batch_size=batch_test, num_workers=args.workers)
 
-    test_dataset = Market1501(root + '/bounding_box_test', transform=test_transform)
-    test_flip_dataset = Market1501(root + '/bounding_box_test', transform=test_flip_transform)
-    test_loader = dataloader.DataLoader(test_dataset, batch_size=batch_test, num_workers=num_workers)
-    test_flip_loader = dataloader.DataLoader(test_flip_dataset, batch_size=batch_test, num_workers=num_workers)
+    test_dataset = Market1501(args.root + '/bounding_box_test', transform=test_transform)
+    test_flip_dataset = Market1501(args.root + '/bounding_box_test', transform=test_flip_transform)
+    test_loader = dataloader.DataLoader(test_dataset, batch_size=batch_test, num_workers=args.workers)
+    test_flip_loader = dataloader.DataLoader(test_flip_dataset, batch_size=batch_test, num_workers=args.workers)
 
     mgn = MGN(num_classes=len(train_dataset.unique_ids)).to(DEVICE)
 
@@ -257,8 +274,8 @@ def run():
             optimizer.zero_grad()
 
             outputs = mgn(inputs)
-            losses = [triplet_semihard_loss(output, labels) for output in outputs[1:4]] + \
-                     [cross_entropy_loss(output, labels) for output in outputs[4:]]
+            losses = [triplet_semihard_loss(output, labels) for output in outputs[1]] + \
+                     [cross_entropy_loss(output, labels) for output in outputs[2]]
             loss = sum(losses) / len(losses)
             loss.backward()
 
