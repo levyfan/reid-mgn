@@ -24,6 +24,8 @@ Please cite and refer to:
 }
 ```
 
+Code is **only** tested against python 2.7 and pytorch 0.4.
+
 ### Implementation
 
 ![Multiple Granularity Network](/architecture.png)
